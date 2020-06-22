@@ -1,11 +1,12 @@
 from random import randint
+from time import sleep
+
 import numpy as np
 from matplotlib import pyplot as plt
-from time import sleep
 
 
 class Engine:
-    def __init__(self, board_size=40, round_time=.5):
+    def __init__(self, board_size=40, round_time=.05):
         self.board_size = board_size
         self.round_time = round_time
 
@@ -24,8 +25,10 @@ class Engine:
         fx, fy = self.fruit
         board[fx, fy] = 1
 
+        board = np.pad(board, 1, constant_values=-1)
+
         return board
-    
+
     def change_direction(self, direction):
         if direction == 'up':
             d = 0
@@ -37,7 +40,7 @@ class Engine:
             d = 3
 
         if self.snake_direction % 2 != d % 2:
-            self.snake_direction = d
+            self.snake_new_direction = d
 
     def init_snake(self):
         self.alive = True
@@ -47,6 +50,7 @@ class Engine:
         self.snake.append([pos, pos])
 
         self.snake_direction = randint(0, 3)
+        self.snake_new_direction = self.snake_direction
         # 0 - top, 1 - right, 2 - down, 3 - left
 
     def spawn_fruit(self):
@@ -58,8 +62,8 @@ class Engine:
         self.fruit = pos
 
     def check_if_alive(self):
-        head = self.snake[0]
-        if head in self.snake[1:]:
+        head = self.snake[-1]
+        if head in self.snake[:-1]:
             self.alive = False
         elif head[0] < 0 or head[0] > self.board_size - 1:
             self.alive = False
@@ -67,22 +71,25 @@ class Engine:
             self.alive = False
 
     def next_round(self):
-        head = self.snake[0].copy()
+        self.round += 1
+        head = self.snake[-1].copy()
+        self.snake_direction = self.snake_new_direction
 
         if self.snake_direction == 0:
-            head[1] -= 1
+            head[1] += 1
         elif self.snake_direction == 1:
             head[0] += 1
         elif self.snake_direction == 2:
-            head[1] += 1
+            head[1] -= 1
         else:
             head[0] -= 1
 
         self.snake.append(head)
 
-        if self.snake[0] != self.fruit:
-            del self.snake[-1]
+        if head != self.fruit:
+            del self.snake[0]
         else:
+            self.points += 10
             self.spawn_fruit()
 
 
