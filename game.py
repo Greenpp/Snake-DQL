@@ -70,8 +70,13 @@ class Engine:
         elif head[1] < 0 or head[1] > self.board_size - 1:
             self.alive = False
 
+        if not self.alive:
+            self.points -= 100
+
     def next_round(self):
         self.round += 1
+        if self.round % 10 == 0:
+            self.points += 1
         head = self.snake[-1].copy()
         self.snake_direction = self.snake_new_direction
 
@@ -89,7 +94,7 @@ class Engine:
         if head != self.fruit:
             del self.snake[0]
         else:
-            self.points += 10
+            self.points += 100
             self.spawn_fruit()
 
 
