@@ -1,13 +1,17 @@
+from time import sleep
+
+import torch
 from kivy.app import App
 from kivy.clock import Clock
 from kivy.core.window import Window
 from kivy.graphics import Color, Rectangle
 from kivy.uix.button import Button
-from kivy.uix.widget import Widget
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
+from kivy.uix.widget import Widget
 
 from game import Engine
+from net import create_state, SnakeNet
 
 
 class SnakeGame(Widget):
@@ -17,7 +21,7 @@ class SnakeGame(Widget):
         self._keyboard = Window.request_keyboard(self._keyboard_closed, self)
         self._keyboard.bind(on_key_down=self._on_keyboard_down)
 
-        self.engine = Engine()
+        self.engine = Engine(board_size=10)
         self.block_size = 10
         self.board_length = (self.block_size + 1) * self.engine.board_size
 
@@ -27,6 +31,27 @@ class SnakeGame(Widget):
             self.engine.check_if_alive()
             self.draw_board()
             self.update_score()
+
+    def init_ai(self):
+        self.model = SnakeNet()
+        state_dict = torch.load('./snake_model.pt')
+        self.model.load_state_dict(state_dict)
+        self.model.cuda()
+
+        self.board = self.engine.to_numpy()
+        self.last_board = self.board
+
+    def update_nn(self, dt):
+        if self.engine.alive:
+            state = create_state(self.last_board, self.board)
+            action = torch.argmax(self.model(state)).item() - 1
+            self.engine.next_round_nn(action)
+            self.engine.check_if_alive()
+            self.draw_board()
+            self.update_score()
+
+            self.last_board = self.board
+            self.board = self.engine.to_numpy()
 
     def update_score(self):
         score = self.engine.points
@@ -72,14 +97,17 @@ class SnakeGame(Widget):
         elif keycode[1] == 'd':
             self.engine.change_direction('right')
         elif keycode[1] == 'r':
-            self.engine = Engine()
+            self.engine.reset()
 
 
 class SnakeApp(App):
     def build(self):
         label = Label(text='Halo', size_hint=(.3, 1), font_size='30sp')
         game = SnakeGame(score_label=label)
-        Clock.schedule_interval(game.update, game.engine.round_time)
+        # Clock.schedule_interval(game.update, game.engine.round_time)
+
+        game.init_ai()
+        Clock.schedule_interval(game.update_nn, game.engine.round_time)
 
         layout = GridLayout(cols=2, padding=[20])
         layout.add_widget(game)

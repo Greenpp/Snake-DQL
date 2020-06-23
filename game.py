@@ -16,11 +16,19 @@ class Engine:
         self.points = 0
         self.round = 1
 
+    def reset(self):
+        self.points = 0
+        self.round = 1
+
+        self.init_snake()
+        self.spawn_fruit()
+
     def to_numpy(self):
         board = np.zeros((self.board_size, self.board_size))
         for s in self.snake:
             x, y = s
-            board[x, y] = -1
+            if 0 < x < self.board_size - 1 and 0 < y < self.board_size - 1:
+                board[x, y] = -1
 
         fx, fy = self.fruit
         board[fx, fy] = 1
@@ -71,12 +79,12 @@ class Engine:
             self.alive = False
 
         if not self.alive:
-            self.points -= 100
+            self.points -= 1
 
     def next_round(self):
         self.round += 1
-        if self.round % 10 == 0:
-            self.points += 1
+        if self.round % 100 == 0:
+            self.points -= 1
         head = self.snake[-1].copy()
         self.snake_direction = self.snake_new_direction
 
@@ -94,7 +102,7 @@ class Engine:
         if head != self.fruit:
             del self.snake[0]
         else:
-            self.points += 100
+            self.points += 1
             self.spawn_fruit()
 
     def next_round_nn(self, action):
