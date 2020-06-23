@@ -97,8 +97,20 @@ class Engine:
             self.points += 100
             self.spawn_fruit()
 
+    def next_round_nn(self, action):
+        # action is -1 - turn left, 0 - nothing, 1 - turn right
+        self.snake_new_direction = (self.snake_direction + action) % 4
+
+        self.next_round()
+
+        board = self.to_numpy()
+        reward = self.points
+        terminal = not self.alive
+
+        return board, reward, terminal
+
 
 if __name__ == '__main__':
     eng = Engine()
 
-    print(eng.to_numpy())
+    print(eng.to_numpy().shape)
