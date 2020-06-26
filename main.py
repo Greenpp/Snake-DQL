@@ -11,8 +11,8 @@ from kivy.uix.label import Label
 from kivy.uix.widget import Widget
 
 from game import Engine
-from net import create_state, SnakeNet
-
+from net import create_state_new, SnakeNet
+import random
 
 class SnakeGame(Widget):
     def __init__(self, **kwargs):
@@ -34,24 +34,26 @@ class SnakeGame(Widget):
 
     def init_ai(self):
         self.model = SnakeNet()
-        state_dict = torch.load('./snake_model.pt')
+        state_dict = torch.load('./wandb/run-20200626_135041-9nhhmi8v/model.pt')['model_state_dict']
         self.model.load_state_dict(state_dict)
         self.model.cuda()
+        self.model.eval()
 
-        self.board = self.engine.to_numpy()
+        self.board = self.engine.to_numpy_new()
         self.last_board = self.board
 
     def update_nn(self, dt):
         if self.engine.alive:
-            state = create_state(self.last_board, self.board)
+            state = create_state_new(self.board)
             action = torch.argmax(self.model(state)).item() - 1
+            # if random.random() < .1:
+            #     action = random.randint(-1,1)
             self.engine.next_round_nn(action)
-            self.engine.check_if_alive()
             self.draw_board()
             self.update_score()
 
             self.last_board = self.board
-            self.board = self.engine.to_numpy()
+            self.board = self.engine.to_numpy_new()
 
     def update_score(self):
         score = self.engine.points

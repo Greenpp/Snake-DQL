@@ -37,6 +37,29 @@ class Engine:
 
         return board
 
+    def to_numpy_new(self):
+        board = np.zeros((2, self.board_size + 2, self.board_size + 2))
+        border = np.pad(np.zeros((self.board_size, self.board_size)),
+                        1, constant_values=1)[np.newaxis, :]
+        board = np.concatenate((border, board), axis=0)
+        *body, head = self.snake
+        for s in body:
+            x, y = s
+            x += 1
+            y += 1
+
+            board[0, x, y] = 1
+
+        x, y = head
+        if 0 < x < self.board_size - 1 and 0 < y < self.board_size - 1:
+            board[1, x+1, y+1] = 1
+            board[0, x+1, y+1] = 1
+
+        x, y = self.fruit
+        board[2, x+1, y+1] = 1
+
+        return board
+
     def change_direction(self, direction):
         if direction == 'up':
             d = 0
@@ -81,10 +104,16 @@ class Engine:
         if not self.alive:
             self.points -= 1
 
+    def get_fruit_distance(self):
+        head = np.array(self.snake[-1])
+        fruit = np.array(self.fruit)
+
+        dist = np.linalg.norm(head - fruit)
+
+        return dist
+
     def next_round(self):
         self.round += 1
-        if self.round % 100 == 0:
-            self.points -= 1
         head = self.snake[-1].copy()
         self.snake_direction = self.snake_new_direction
 
@@ -107,18 +136,22 @@ class Engine:
 
     def next_round_nn(self, action):
         # action is -1 - turn left, 0 - nothing, 1 - turn right
-        self.snake_new_direction = (self.snake_direction + action) % 4
+        # self.snake_new_direction = (self.snake_direction + action) % 4
+        d = action
+        if self.snake_direction % 2 != d % 2:
+            self.snake_new_direction = d
 
         self.next_round()
+        self.check_if_alive()
 
-        board = self.to_numpy()
-        reward = self.points
+        board = self.to_numpy_new()
+        reward = self.points - self.round * .01
         terminal = not self.alive
 
         return board, reward, terminal
 
 
 if __name__ == '__main__':
-    eng = Engine()
+    eng = Engine(board_size=10)
 
-    print(eng.to_numpy().shape)
+    print(eng.to_numpy_new())
