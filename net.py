@@ -3,13 +3,11 @@ import random
 
 import numpy as np
 import torch
-import torch.autograd as autograd
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from matplotlib import pyplot as plt
-
 import wandb
+
 from game import Engine
 
 
@@ -17,68 +15,56 @@ class SnakeNet(nn.Module):
     def __init__(self):
         super(SnakeNet, self).__init__()
 
-        self.actions_num = 4
+        self.actions_num = 3
         self.gamma = 0.9
         self.final_epsilon = .0001
-        self.init_epsilon = 1
-        self.iterations_num = 1000000
+        self.init_epsilon = .5
+        self.iterations_num = 100000
         self.replay_memory_size = 10000
         self.minibatch_size = 32
 
-        self.conv1 = nn.Conv2d(3, 32, 3, padding=1)
-        self.conv2 = nn.Conv2d(32, 32, 3)
-        self.conv3 = nn.Conv2d(32, 64, 3)
-        self.fc1 = nn.Linear(64 * 8 * 8, 256)
-        self.fc2 = nn.Linear(256, self.actions_num)
+        self.fc1 = nn.Linear(11, 128)
+        self.fc2 = nn.Linear(128, 128)
+        self.fc3 = nn.Linear(128, 128)
+        self.fc4 = nn.Linear(128, self.actions_num)
 
     def forward(self, x):
-        x = F.relu(self.conv1(x))
-        x = F.relu(self.conv2(x))
-        x = F.relu(self.conv3(x))
-        x = x.view(-1, 64 * 8 * 8)
         x = F.relu(self.fc1(x))
-        x = self.fc2(x)
+        x = F.relu(self.fc2(x))
+        x = F.relu(self.fc3(x))
+        x = F.softmax(self.fc4(x), dim=1)
 
         return x
 
 
-def create_state(last_board, board):
-    np_state = np.transpose(np.dstack((last_board, board)), (2, 1, 0))
-    state = torch.from_numpy(np_state)
-    state = state.unsqueeze(0).float()
-
-    return state.to('cuda')
-
-
-def create_state_new(board):
-    state = torch.from_numpy(board).unsqueeze(0).float()
+def create_torch_state(state):
+    state = torch.from_numpy(state).unsqueeze(0).float()
 
     return state.to('cuda')
 
 
 if __name__ == '__main__':
-    wandb.init(project='snake-dql', name='4-actions-v2')
+    wandb.init(project='snake-dql', name='manual-extraction-v8')
 
-    game = Engine(board_size=10)
+    game = Engine(board_size=20)
     model = SnakeNet().cuda()
     wandb.watch(model)
 
-    optimizer = optim.Adam(model.parameters(), lr=1e-6)
+    optimizer = optim.Adam(model.parameters(), lr=1e-5)
     criterion = nn.MSELoss()
 
     replay_memory = []
     epsilon = model.init_epsilon
 
-    # board = game.to_numpy()
-    # last_board = board
-    # state = create_state(last_board, board)
-    board = game.to_numpy_new()
-    state = create_state_new(board)
+    board_state = game.get_board_state()
+    state = create_torch_state(board_state)
 
     epsilon_delta = (model.init_epsilon -
                      model.final_epsilon) / model.iterations_num
 
     max_reward = 0
+    games_played = 0
+    last_reward = 0
 
     model.train()
     for i in range(model.iterations_num):
@@ -92,15 +78,18 @@ if __name__ == '__main__':
         action_idx = random.randint(
             0, 2) if random_action else torch.argmax(output).item()
         action[action_idx] = 1
-        action_game = action_idx
+        action_game = action_idx - 1
 
-        last_board = board
-        board, reward, terminal = game.next_round_nn(action_game)
-        new_state = create_state_new(board)
+        board_state, reward, terminal = game.next_round_nn(action_game)
         max_reward = max(max_reward, reward)
+        tmp_reward = reward
+        reward -= last_reward
+        last_reward = tmp_reward
+        new_state = create_torch_state(board_state)
 
         if terminal:
             game.reset()
+            games_played += 1
 
         reward = torch.tensor([reward], dtype=torch.float32).unsqueeze(0)
 
@@ -134,7 +123,8 @@ if __name__ == '__main__':
         loss = criterion(q_vals, y_batch)
         if i % 1000 == 0:
             print(f'Iteration: {i//1000}/{model.iterations_num // 1000}')
-            wandb.log({'Max Q value': max_q, 'Loss': loss, 'Max reward': max_reward})
+            wandb.log({'Max Q value': max_q, 'Loss': loss,
+                       'Max reward': max_reward, 'Games': games_played})
 
         loss.backward()
         optimizer.step()
