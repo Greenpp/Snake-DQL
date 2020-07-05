@@ -17,6 +17,7 @@ class Engine:
         self.init_snake()
         self.spawn_fruit()
 
+        self.last_round_points = 0
         self.points = 0
         self.round = 1
 
@@ -93,17 +94,20 @@ class Engine:
     def next_round(self):
         self.round += 1
         self.move()
+        self.last_round_points = self.points
+        self.points -= self.round_penalty
 
         self.check_if_alive()
         self.check_food()
 
     def next_round_nn(self, action):
         # action is -1 - turn left, 0 - nothing, 1 - turn right
+        action -= 1
         self.snake_new_direction = (self.snake_direction + action) % 4
         self.next_round()
 
         board = self.get_board_state()
-        reward = self.points - self.round * self.round_penalty
+        reward = self.points - self.last_round_points
         terminal = not self.alive
 
         return board, reward, terminal
