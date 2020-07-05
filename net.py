@@ -23,17 +23,11 @@ class Memory(IterableDataset):
         self.iterations = iterations
 
     def __iter__(self):
-        # buff_size = len(self.buffer)
-        # sample_size = min(self.sample_size, buff_size)
-        # sample = random.sample(self.buffer, sample_size) if self.it < self.iterations else []
-        # for s in sample:
-        #     self.it += 1
-        #     yield s
-        while True:
-            yield self.buffer[random.randint(0, len(self.buffer) - 1)]
-
-    def __len__(self):
-        return len(self.buffer)
+        buff_size = len(self.buffer)
+        sample_size = min(self.sample_size, buff_size)
+        sample = random.sample(self.buffer, sample_size)
+        for s in sample:
+            yield s
 
     def append(self, experience):
         self.buffer.append(experience)
@@ -84,7 +78,6 @@ class SnakeNet(pl.LightningModule):
         self.iterations_num = 1000
         self.replay_memory_size = 10000
         self.batch_size = 32
-        self.cur_batch_size = 0
 
         self.agent = Agent(self.batch_size, self.replay_memory_size, self.init_epsilon,
                            self.final_epsilon, self.iterations_num, self.actions_num)
@@ -106,23 +99,17 @@ class SnakeNet(pl.LightningModule):
 
         return x
 
-    def update_batch_size(self):
-        memory_size = len(self.agent.replay_memory)
-        self.cur_batch_size = min(self.batch_size, memory_size)
-
     def configure_optimizers(self):
         return optim.Adam(self.parameters(), lr=1e-5)
 
     def prepare_data(self):
         self.agent.move(None)
-        self.update_batch_size()
 
     def training_step(self, batch, batch_idx):
         game_state = self.agent.get_board_state()
         output = self(game_state.unsqueeze(0))
 
         self.agent.move(output)
-        self.update_batch_size()
 
         y, y_hat = batch
 
@@ -131,7 +118,7 @@ class SnakeNet(pl.LightningModule):
         return {'loss': loss}
 
     def train_dataloader(self):
-        return DataLoader(self.agent.replay_memory, batch_size=self.cur_batch_size, collate_fn=self.custom_collate)
+        return DataLoader(self.agent.replay_memory, batch_size=self.batch_size, collate_fn=self.custom_collate)
 
     def custom_collate(self, batch):
         state_batch = torch.cat(tuple(d[0].unsqueeze(0) for d in batch))
@@ -157,8 +144,7 @@ class SnakeNet(pl.LightningModule):
 if __name__ == '__main__':
     model = SnakeNet()
     trainer = pl.Trainer(
-        gpus=1,
-        max_epochs=model.iterations_num
+        gpus=1
     )
     trainer.fit(model)
 
