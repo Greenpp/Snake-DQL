@@ -135,14 +135,18 @@ class Engine:
             reward -= self.death_penalty
 
         self.points += reward
+        terminal = not self.alive
 
-        return reward, self.alive
+        return reward, terminal
 
     def get_game_state(self):
         """
         Get binary vector describing current game state
         """
-        tail, *body, head = self.snake
+        if len(self.snake) > 1:
+            _, *body, head = self.snake
+        else:
+            *body, head = self.snake
 
         # Direction
         dir_state = np.zeros(4)
