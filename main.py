@@ -25,7 +25,7 @@ class SnakeGame(Widget):
         self.engine = Engine(board_size=20)
         self.round_time = .05
 
-        self.mode_path = None
+        self.model_path = './model.ptl'
 
         self.block_size = 10
         self.board_length = (self.block_size + 1) * self.engine.board_size
@@ -48,7 +48,7 @@ class SnakeGame(Widget):
             self.update_score()
 
     def init_ai(self):
-        self.model = LightningModule.load_from_checkpoint(self.model_path)
+        self.model = SnakeNet.load_from_checkpoint(self.model_path)
         self.model.freeze()
 
     def update_with_model(self, dt):
@@ -113,9 +113,9 @@ class SnakeApp(App):
         score_label = Label(text='', size_hint=(.3, 1), font_size='30sp')
         game = SnakeGame(score_label=score_label)
 
-        # game.init_ai()
-        # Clock.schedule_interval(game.update_with_model, game.round_time)
-        Clock.schedule_interval(game.update, game.round_time)
+        game.init_ai()
+        Clock.schedule_interval(game.update_with_model, game.round_time)
+        # Clock.schedule_interval(game.update, game.round_time)
 
         layout = GridLayout(cols=2, padding=[20])
         layout.add_widget(game)
