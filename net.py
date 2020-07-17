@@ -173,6 +173,8 @@ class SnakeNet(pl.LightningModule):
         self.agent.move(self.epsilon)
         self.update_epsilon()
 
+        batch = self.process_batch(batch)
+
         y, y_hat = batch
         loss = F.mse_loss(y, y_hat)
 
@@ -181,11 +183,11 @@ class SnakeNet(pl.LightningModule):
     def train_dataloader(self):
         ds = self.agent.get_dataset()
         dl = DataLoader(ds, batch_size=self.batch_size,
-                        collate_fn=self.custom_collate)
+                        collate_fn=lambda x: x)
 
         return dl
 
-    def custom_collate(self, batch):
+    def process_batch(self, batch):
         state_batch = torch.cat(tuple(d[0] for d in batch))
         action_batch = torch.cat(tuple(d[1] for d in batch))
         reward_batch = tuple(d[2] for d in batch)
