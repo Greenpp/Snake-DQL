@@ -44,15 +44,17 @@ class RLDataset(IterableDataset):
     Dataset serving stored in memory experiences
     """
 
-    def __init__(self, memory, sample_size):
+    def __init__(self, memory, iterations_num, batch_size):
         super(RLDataset).__init__()
         self.memory = memory
-        self.sample_size = sample_size
+        self.iterations_num = iterations_num
+        self.batch_size = batch_size
 
     def __iter__(self):
-        data = self.memory.sample(self.sample_size)
-
-        return iter(data)
+        for _ in range(self.iterations_num):
+            data = self.memory.sample(self.batch_size)
+            while data:
+                yield data.pop()
 
 
 class Agent:
@@ -60,22 +62,27 @@ class Agent:
     Reinforcement learning agent interacting with the game environment
     """
 
-    def __init__(self, model, memory_size, epoch_samples_num, game_board_size=20):
+    def __init__(self, model, memory_size, iterations_num, batch_size, game_board_size=20):
         self.model = model
         self.game_engine = Engine(game_board_size)
         self.replay_memory = Memory(memory_size)
-        self.epoch_samples = epoch_samples_num
 
-        self.game_state = self.game_engine.get_game_state()
-        self.game_state = torch.from_numpy(self.game_state).unsqueeze(0)
+        self.dataset = RLDataset(
+            self.replay_memory, iterations_num, batch_size)
+
+        self.game_state = self.get_game_state()
 
     def get_dataset(self):
         """
-        Create dataset using replay memory
+        Returns dataset based on replay memory
         """
-        ds = RLDataset(self.replay_memory, self.epoch_samples)
 
-        return ds
+        return self.dataset
+
+    def get_game_state(self):
+        state = self.game_engine.get_game_state()
+
+        return torch.from_numpy(state).unsqueeze(0)
 
     def move(self, epsilon):
         """
@@ -95,14 +102,15 @@ class Agent:
 
         direction = self.translate_action(action_idx)
         reward, terminal = self.game_engine.next_round(direction)
-        new_state = self.game_engine.get_game_state()
-        new_state = torch.from_numpy(new_state).unsqueeze(0)
+        new_state = self.get_game_state()
 
         exp = (self.game_state, action, reward, new_state, terminal)
         self.replay_memory.append(exp)
 
         if terminal:
             self.game_engine.reset()
+            new_state = self.get_game_state()
+        self.game_state = new_state
 
     def translate_action(self, action):
         """
@@ -135,15 +143,18 @@ class SnakeNet(pl.LightningModule):
         self.gamma = .9
         self.epsilon_init = 1
         self.epsilon_final = .0001
-        self.iterations_num = 1000
+        self.iterations_num = 100000
         self.replay_memory_size = 10000
         self.batch_size = 32
+        self.warmup_rounds = self.batch_size
+        self.board_size = 10
 
         self.epsilon = self.epsilon_init
         self.epsilon_delta = (self.epsilon_final -
                               self.epsilon_init) / self.iterations_num
 
-        self.agent = Agent(self, self.replay_memory_size, 1000)
+        self.agent = Agent(self, self.replay_memory_size,
+                           self.iterations_num, self.batch_size, self.board_size)
         self.net = nn.Sequential(
             nn.Linear(11, 128),
             nn.ReLU(),
@@ -164,7 +175,7 @@ class SnakeNet(pl.LightningModule):
         return opt
 
     def prepare_data(self):
-        return self.agent.warmup(1000)
+        return self.agent.warmup(self.warmup_rounds)
 
     def update_epsilon(self):
         self.epsilon -= self.epsilon_delta
@@ -197,7 +208,7 @@ class SnakeNet(pl.LightningModule):
         with torch.no_grad():
             new_state_output = self(new_state_batch)
             y_hat = torch.tensor(tuple([reward if terminal else reward + self.gamma * torch.max(new_output)]
-                                    for reward, terminal, new_output in zip(reward_batch, terminal_batch, new_state_output)))
+                                       for reward, terminal, new_output in zip(reward_batch, terminal_batch, new_state_output)))
             y_hat = y_hat.squeeze()
 
         pred = self(state_batch)
@@ -212,6 +223,9 @@ class SnakeNet(pl.LightningModule):
 if __name__ == '__main__':
     torch.autograd.set_detect_anomaly(True)
     model = SnakeNet()
-    trainer = pl.Trainer(gpus=1)
+    trainer = pl.Trainer(
+        gpus=1,
+        max_epochs=1
+    )
     trainer.fit(model)
     trainer.save_checkpoint('model.ptl')
