@@ -20,7 +20,7 @@ class Engine:
         self.round = None
         self.snake = None
 
-        self.food_reward = 1
+        self.food_reward = 10
         self.death_penalty = 1
         self.round_penalty = .01
 
@@ -123,18 +123,19 @@ class Engine:
 
         self._move()
 
-        reward = 0
-        reward -= self.round_penalty
+        food_reward = 0
+        death_penalty = 0
         if self._has_eaten():
-            reward += self.food_reward
+            food_reward = self.food_reward
             self._reset_fruit()
         else:
             self.snake.pop(0)
         if self._has_died():
             self.alive = False
-            reward -= self.death_penalty
+            death_penalty = self.death_penalty
 
-        self.points += reward
+        reward = food_reward - death_penalty - self.round_penalty
+        self.points += 1 if food_reward != 0 else 0
         terminal = not self.alive
 
         return reward, terminal
