@@ -13,7 +13,7 @@ from game import Engine
 
 class Memory:
     """
-    Memory holding given number of last experiences with ability to sample it random
+    Memory holding given number of last experiences with ability to sample it randomly
     """
 
     def __init__(self, size):
@@ -52,8 +52,7 @@ class RLDataset(IterableDataset):
     def __iter__(self):
         data = self.memory.sample(self.sample_size)
 
-        for d in data:
-            yield d
+        return iter(data)
 
 
 class Agent:
@@ -193,10 +192,11 @@ class SnakeNet(pl.LightningModule):
         new_state_batch = torch.cat(tuple(d[3] for d in batch))
         terminal_batch = tuple(d[4] for d in batch)
 
-        new_state_output = self(new_state_batch)
-        y_hat = torch.tensor(tuple([reward if terminal else reward + self.gamma * torch.max(new_output)]
-                                   for reward, terminal, new_output in zip(reward_batch, terminal_batch, new_state_output)))
-        y_hat = y_hat.squeeze()
+        with torch.no_grad():
+            new_state_output = self(new_state_batch)
+            y_hat = torch.tensor(tuple([reward if terminal else reward + self.gamma * torch.max(new_output)]
+                                    for reward, terminal, new_output in zip(reward_batch, terminal_batch, new_state_output)))
+            y_hat = y_hat.squeeze()
 
         pred = self(state_batch)
         action_batch = action_batch.type_as(pred)
