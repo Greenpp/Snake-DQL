@@ -62,9 +62,9 @@ class Agent:
     Reinforcement learning agent interacting with the game environment
     """
 
-    def __init__(self, model, memory_size, iterations_num, batch_size, game_board_size=20):
+    def __init__(self, model, memory_size, iterations_num, batch_size, game_board_size=20, random_start=True):
         self.model = model
-        self.game_engine = Engine(game_board_size)
+        self.game_engine = Engine(game_board_size, random_start)
         self.replay_memory = Memory(memory_size)
 
         self.dataset = RLDataset(
@@ -94,7 +94,7 @@ class Agent:
         if rnd_action:
             action_idx = random.randint(0, actions_num - 1)
         else:
-            model_output = self.model(game_state)
+            model_output = self.model(self.game_state)
             action_idx = torch.argmax(model_output).item()
         action = torch.zeros(actions_num)
         action[action_idx] = 1
@@ -140,27 +140,30 @@ class SnakeNet(pl.LightningModule):
         super().__init__()
 
         self.actions_num = 3
-        self.gamma = .9
+        self.gamma = .95
         self.epsilon_init = 1
         self.epsilon_final = .0001
-        self.iterations_num = 100000
+        self.iterations_num = 10000
         self.replay_memory_size = 10000
         self.batch_size = 32
         self.warmup_rounds = self.batch_size
         self.board_size = 10
+        self.random_start = False
 
         self.epsilon = self.epsilon_init
-        self.epsilon_delta = (self.epsilon_final -
-                              self.epsilon_init) / self.iterations_num
+        self.epsilon_delta = (self.epsilon_init -
+                              self.epsilon_final) / self.iterations_num
 
-        self.agent = Agent(self, self.replay_memory_size,
-                           self.iterations_num, self.batch_size, self.board_size)
+        self.agent = Agent(self, self.replay_memory_size, self.iterations_num,
+                           self.batch_size, self.board_size, self.random_start)
         self.net = nn.Sequential(
-            nn.Linear(11, 128),
+            nn.Linear(11, 1024),
             nn.ReLU(),
-            nn.Linear(128, 128),
+            nn.Linear(1024, 1024),
             nn.ReLU(),
-            nn.Linear(128, self.actions_num),
+            nn.Linear(1024, 512),
+            nn.ReLU(),
+            nn.Linear(512, self.actions_num),
             nn.Softmax(dim=1)
         )
 
@@ -172,7 +175,8 @@ class SnakeNet(pl.LightningModule):
 
     def configure_optimizers(self):
         opt = optim.Adam(self.parameters(), lr=1e-5)
-        return opt
+        sch = optim.lr_scheduler.StepLR(opt, 5000, .1)
+        return [opt], [sch]
 
     def prepare_data(self):
         return self.agent.warmup(self.warmup_rounds)
