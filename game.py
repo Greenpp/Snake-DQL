@@ -10,7 +10,7 @@ class Engine:
     Used for manageing game environment
     """
 
-    def __init__(self, board_size):
+    def __init__(self, board_size, random_start=False):
         self.board_size = board_size
 
         self.alive = None
@@ -20,9 +20,11 @@ class Engine:
         self.round = None
         self.snake = None
 
-        self.food_reward = 10
+        self.random_start = random_start
+
+        self.food_reward = 1
         self.death_penalty = 1
-        self.round_penalty = .01
+        self.round_penalty = .05
 
         self.reset()
 
@@ -43,8 +45,14 @@ class Engine:
         self.alive = True
         self.snake = []
 
-        init_pos = self.board_size // 2
-        self.snake.append([init_pos, init_pos])
+        if self.random_start:
+            pos_x = randint(0, self.board_size - 1)
+            pos_y = randint(0, self.board_size - 1)
+            init_pos = [pos_x, pos_y]
+        else:
+            pos = self.board_size // 2
+            init_pos = [pos, pos]
+        self.snake.append(init_pos)
 
         self.direction = randint(0, 3)
 
