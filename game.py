@@ -187,4 +187,19 @@ class Engine:
 
         return np.concatenate([dir_state, food_state, danger_state])
 
+    def get_head_surranding(self, size=3):
+        """
+        Creates a numpy array representation of heads surroundings
+        """
+        board_pad_size = self.board_size + 2 * size
+        board_shape = (board_pad_size, board_pad_size)
+        
+        obstacle_plane = np.zeros((self.board_size, self.board_size))
+        for snake_part in self.snake[:-1]:
+            x, y = snake_part
+            obstacle_plane[y, x] = 1
+        obstacle_plane = np.pad(obstacle_plane, size, constant_values=1)
+
+        return obstacle_plane
+
         
