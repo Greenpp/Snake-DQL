@@ -1,5 +1,6 @@
 import random
 
+import numpy as np
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
@@ -62,8 +63,9 @@ class Agent:
     Reinforcement learning agent interacting with the game environment
     """
 
-    def __init__(self, model, memory_size, iterations_num, batch_size, game_board_size=20, random_start=True):
+    def __init__(self, model, memory_size, iterations_num, batch_size, head_surrounding_size, game_board_size=20, random_start=True):
         self.model = model
+        self.head_surrounding_size = head_surrounding_size
         self.game_engine = Engine(game_board_size, random_start)
         self.replay_memory = Memory(memory_size)
 
@@ -80,9 +82,17 @@ class Agent:
         return self.dataset
 
     def get_game_state(self):
-        state = self.game_engine.get_game_state()
+        game_state = self.game_engine.get_game_state()
+        hs_size = self.head_surrounding_size * 2 + 1
+        head_state = self.game_engine.get_head_surrounding(
+            self.head_surrounding_size) if self.game_engine.alive else np.zeros((hs_size, hs_size))
 
-        return torch.from_numpy(state).unsqueeze(0)
+        game_state = torch.from_numpy(game_state).unsqueeze(0)
+        head_state = torch.from_numpy(head_state).unsqueeze(0).unsqueeze(0)
+
+        state = (head_state, game_state)
+
+        return state
 
     def move(self, epsilon):
         """
@@ -140,10 +150,14 @@ class SnakeNet(pl.LightningModule):
         super().__init__()
 
         self.actions_num = 3
+        self.head_surrounding_size = 4
+        self.head_state_features = 16
+        self.game_features = 11
+
         self.gamma = .95
         self.epsilon_init = 1
         self.epsilon_final = .0001
-        self.iterations_num = 10000
+        self.iterations_num = 20000
         self.replay_memory_size = 10000
         self.batch_size = 32
         self.warmup_rounds = self.batch_size
@@ -155,9 +169,10 @@ class SnakeNet(pl.LightningModule):
                               self.epsilon_final) / self.iterations_num
 
         self.agent = Agent(self, self.replay_memory_size, self.iterations_num,
-                           self.batch_size, self.board_size, self.random_start)
+                           self.batch_size, self.head_surrounding_size, self.board_size,
+                           self.random_start)
         self.net = nn.Sequential(
-            nn.Linear(11, 1024),
+            nn.Linear(self.game_features + self.head_state_features, 1024),
             nn.ReLU(),
             nn.Linear(1024, 1024),
             nn.ReLU(),
@@ -167,9 +182,27 @@ class SnakeNet(pl.LightningModule):
             nn.Softmax(dim=1)
         )
 
+        self.head_net = nn.Sequential(
+            nn.Conv2d(1, 32, 3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, 3, padding=1),
+            nn.ReLU(),
+            nn.Flatten(),
+            nn.Linear(
+                pow(2 * self.head_surrounding_size + 1, 2) * 64,
+                self.head_state_features
+            ),
+            nn.Sigmoid()
+        )
+
     @auto_move_data
     def forward(self, x):
-        x = x.float()
+        head_data, state_data = x
+        head_data = head_data.float()
+        state_data = state_data.float()
+
+        head_state = self.head_net(head_data)
+        x = torch.cat((head_state, state_data), dim=1)
 
         return self.net(x)
 
@@ -203,10 +236,17 @@ class SnakeNet(pl.LightningModule):
         return dl
 
     def process_batch(self, batch):
-        state_batch = torch.cat(tuple(d[0] for d in batch))
+        head_state = torch.cat(tuple(d[0][0] for d in batch))
+        game_state = torch.cat(tuple(d[0][1] for d in batch))
+        state_batch = (head_state, game_state)
+
         action_batch = torch.cat(tuple(d[1] for d in batch))
         reward_batch = tuple(d[2] for d in batch)
-        new_state_batch = torch.cat(tuple(d[3] for d in batch))
+
+        new_head_state = torch.cat(tuple(d[3][0] for d in batch))
+        new_game_state = torch.cat(tuple(d[3][1] for d in batch))
+        new_state_batch = (new_head_state, new_game_state)
+
         terminal_batch = tuple(d[4] for d in batch)
 
         with torch.no_grad():

@@ -50,11 +50,25 @@ class SnakeGame(Widget):
     def init_ai(self):
         self.model = SnakeNet.load_from_checkpoint(self.model_path)
         self.model.freeze()
+        self.head_surrounding_size = self.model.head_surrounding_size
+
+    def get_game_state(self):
+        game_state = self.engine.get_game_state()
+        hs_size = self.head_surrounding_size * 2 + 1
+        head_state = self.engine.get_head_surrounding(
+            self.head_surrounding_size) if self.engine.alive else np.zeros((hs_size, hs_size))
+
+        game_state = torch.from_numpy(game_state).unsqueeze(0)
+        head_state = torch.from_numpy(head_state).unsqueeze(0).unsqueeze(0)
+
+        state = (head_state, game_state)
+
+        return state
 
     def update_with_model(self, dt):
         if self.engine.alive:
-            state = self.engine.get_game_state()
-            output = self.model(torch.from_numpy(state).unsqueeze(0))
+            state = self.get_game_state()
+            output = self.model(state)
             action = torch.argmax(output).item() - 1
             self.game_direction = (self.game_direction + action) % 4
             self.engine.next_round(self.game_direction)
