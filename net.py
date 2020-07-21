@@ -7,7 +7,9 @@ import torch.nn as nn
 import torch.optim as optim
 from pytorch_lightning.core.decorators import auto_move_data
 from torch.utils.data import DataLoader, IterableDataset
-
+from pytorch_lightning.loggers import WandbLogger
+import wandb
+import os
 from game import Engine
 
 
@@ -47,14 +49,17 @@ class RLDataset(IterableDataset):
     def __init__(self, memory, iterations_num, batch_size):
         super(RLDataset).__init__()
         self.memory = memory
-        self.iterations_num = iterations_num
+        self.epoch_iterations_num = iterations_num
         self.batch_size = batch_size
 
     def __iter__(self):
-        for _ in range(self.iterations_num):
+        for _ in range(self.epoch_iterations_num):
             data = self.memory.sample(self.batch_size)
             while data:
                 yield data.pop()
+
+    def __len__(self):
+        return self.epoch_iterations_num
 
 
 class Agent:
@@ -83,6 +88,25 @@ class Agent:
         state = self.game_engine.get_game_state()
 
         return torch.from_numpy(state).unsqueeze(0)
+
+    def play_full_game(self, max_moves=1000):
+        self.game_engine.reset()
+
+        for _ in range(max_moves):
+            state = self.get_game_state()
+            out = self.model(state)
+            action = torch.argmax(out).item() - 1
+            new_dir = (self.game_engine.direction + action) % 4
+            self.game_engine.next_round(new_dir)
+
+            if not self.game_engine.alive:
+                break
+
+        points = self.game_engine.points
+
+        self.game_engine.reset()
+
+        return points
 
     def move(self, epsilon):
         """
@@ -140,15 +164,16 @@ class SnakeNet(pl.LightningModule):
         super().__init__()
 
         self.actions_num = 3
-        self.gamma = .95
+        self.gamma = .99
         self.epsilon_init = 1
         self.epsilon_final = .0001
-        self.iterations_num = 10000
+        self.iterations_num = 1000
         self.replay_memory_size = 10000
         self.batch_size = 32
         self.warmup_rounds = self.batch_size
         self.board_size = 10
         self.random_start = False
+        self.validation_rounds = 10
 
         self.epsilon = self.epsilon_init
         self.epsilon_delta = (self.epsilon_init -
@@ -163,8 +188,7 @@ class SnakeNet(pl.LightningModule):
             nn.ReLU(),
             nn.Linear(1024, 512),
             nn.ReLU(),
-            nn.Linear(512, self.actions_num),
-            nn.Softmax(dim=1)
+            nn.Linear(512, self.actions_num)
         )
 
     @auto_move_data
@@ -175,8 +199,7 @@ class SnakeNet(pl.LightningModule):
 
     def configure_optimizers(self):
         opt = optim.Adam(self.parameters(), lr=1e-5)
-        sch = optim.lr_scheduler.StepLR(opt, 5000, .1)
-        return [opt], [sch]
+        return [opt]
 
     def prepare_data(self):
         return self.agent.warmup(self.warmup_rounds)
@@ -192,6 +215,8 @@ class SnakeNet(pl.LightningModule):
 
         y, y_hat = batch
         loss = F.mse_loss(y, y_hat)
+
+        self.logger.log_metrics({'loss': loss})
 
         return {'loss': loss}
 
@@ -216,6 +241,8 @@ class SnakeNet(pl.LightningModule):
             y_hat = y_hat.squeeze()
 
         pred = self(state_batch)
+        max_pred_q = torch.max(pred).item()
+        self.logger.log_metrics({'max predicted Q': max_pred_q})
         action_batch = action_batch.type_as(pred)
         y_hat = y_hat.type_as(pred)
 
@@ -223,13 +250,30 @@ class SnakeNet(pl.LightningModule):
 
         return y, y_hat
 
+    def val_dataloader(self):
+        return DataLoader([0])
+
+    def validation_step(self, batch, batch_idx):
+        points = [self.agent.play_full_game()
+                  for _ in range(self.validation_rounds)]
+
+        avg_points = sum(points) / len(points)
+        max_points = max(points)
+        min_points = min(points)
+
+        self.logger.log_metrics(
+            {'avg points': avg_points, 'max points': max_points, 'min points': min_points})
+
+        return {'Avg points': avg_points}
+
 
 if __name__ == '__main__':
-    torch.autograd.set_detect_anomaly(True)
     model = SnakeNet()
+    logger = WandbLogger(project='snake-dql', name='High gamma')
     trainer = pl.Trainer(
         gpus=1,
-        max_epochs=1
+        max_epochs=10,
+        logger=logger
     )
     trainer.fit(model)
-    trainer.save_checkpoint('model.ptl')
+    trainer.save_checkpoint(os.path.join(wandb.run.dir, 'model.ptl'))
