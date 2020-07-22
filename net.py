@@ -164,7 +164,7 @@ class SnakeNet(pl.LightningModule):
         super().__init__()
 
         self.actions_num = 3
-        self.gamma = .99
+        self.gamma = .95
         self.epsilon_init = 1
         self.epsilon_final = .0001
         self.iterations_num = 1000
@@ -182,13 +182,11 @@ class SnakeNet(pl.LightningModule):
         self.agent = Agent(self, self.replay_memory_size, self.iterations_num,
                            self.batch_size, self.board_size, self.random_start)
         self.net = nn.Sequential(
-            nn.Linear(11, 1024),
+            nn.Linear(11, 256),
             nn.ReLU(),
-            nn.Linear(1024, 1024),
+            nn.Linear(256, 256),
             nn.ReLU(),
-            nn.Linear(1024, 512),
-            nn.ReLU(),
-            nn.Linear(512, self.actions_num)
+            nn.Linear(256, self.actions_num)
         )
 
     @auto_move_data
@@ -269,7 +267,7 @@ class SnakeNet(pl.LightningModule):
 
 if __name__ == '__main__':
     model = SnakeNet()
-    logger = WandbLogger(project='snake-dql', name='High gamma')
+    logger = WandbLogger(project='snake-dql', name='256 Neurons')
     trainer = pl.Trainer(
         gpus=1,
         max_epochs=10,

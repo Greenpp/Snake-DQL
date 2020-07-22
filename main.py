@@ -25,7 +25,7 @@ class SnakeGame(Widget):
         self.engine = Engine(board_size=20)
         self.round_time = .05
 
-        self.model_path = './model.ptl'
+        self.model_path = './models/model.ptl'
 
         self.block_size = 10
         self.board_length = (self.block_size + 1) * self.engine.board_size
